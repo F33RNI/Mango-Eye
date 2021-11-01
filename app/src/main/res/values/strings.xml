@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Mango Eye</string>
+    <string name="str_exit">Exit</string>
+    <string name="str_settings">Settings</string>
+    <string name="str_back">Back</string>
+    <string name="str_exit_app">Close Mango Eye</string>
+    <string name="str_exit_confirmation">Do you really want to close the application completely?</string>
+    <string name="str_confirmation_btn_exit">Exit</string>
+    <string name="str_confirmation_btn_cancel">Cancel</string>
+    <string name="str_reset_to_default">Reset to default</string>
+    <string name="str_confirmation_btn_restore">Restore</string>
+    <string name="str_dialog_reset_settings">Are you sure you want to return all the default settings?</string>
+    <string name="str_dialog_title_restore">Restore settings</string>
+    <string name="str_confirmation_btn_delete">Delete</string>
+    <string name="str_delete_file_confirmation">Are you sure you want to delete\n</string>
+    <string name="str_delete_file">Delete file</string>
+</resources>
