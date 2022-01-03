@@ -10,8 +10,8 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
+            <option value="$PROJECT_DIR$/OpenCV-android-sdk/sdk" />
             <option value="$PROJECT_DIR$/app" />
-            <option value="$USER_HOME$/Desktop/Files/Projects/OpenCV-android-sdk/sdk" />
           </set>
         </option>
         <option name="resolveModulePerSourceSet" value="false" />

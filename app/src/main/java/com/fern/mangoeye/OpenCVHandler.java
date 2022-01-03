@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Fern H. Mango-Eye android application
+ * Copyright (C) 2021 Fern H., Mango-Eye Android application
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,180 +21,326 @@
 
 package com.fern.mangoeye;
 
-import java.sql.Timestamp;
-import java.util.ArrayList;
-import java.util.List;
+import android.app.Activity;
+import android.content.pm.PackageManager;
+import android.util.Log;
+import android.view.Surface;
+
+import org.opencv.android.CameraBridgeViewBase;
+import org.opencv.android.JavaCameraView;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
-import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
-import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
-/**
- * This class determines if there are new movements in the frame
- */
-public class OpenCVHandler {
-    private final Size blurSize = new Size(9, 9);
-    private List<MatOfPoint> contours;
-    private final Scalar contoursColor = new Scalar(0, 255, 0, 255);
-    private Mat hierarchy;
-    private Mat kernel;
-    private Mat matGray;
-    private Mat matRGBA;
-    private Mat matRef;
-    private Mat matRefFloat;
-    private Mat matYUV;
-    private boolean motionDetected;
-    private int motionFrames;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.List;
+
+public class OpenCVHandler implements CameraBridgeViewBase.CvCameraViewListener2 {
+    private final String TAG = this.getClass().getName();
+
+    private static final int detectMotionFrames = 5;
+    private static final long stopRecordingTimeout = 5000;
+    private static final long warmupTimeout = 5000;
+
+    private final JavaCameraView cameraBridgeViewBase;
+    private final Activity activity;
+    private final Recorder recorder;
+
+    private boolean initialized;
+
+    private Mat inputRGBA, outputRGBA, matRGBAt, matGray, matRef, matRefFloat, matDiff;
+    private List<Mat> channels;
+
+    private final Timestamp timestamp = new Timestamp(0);
     private final Scalar textBackgroundColor = new Scalar(255, 255, 255, 255);
     private final Scalar textForegroundColor = new Scalar(0, 0, 0, 255);
-    private final Timestamp timestamp = new Timestamp(0);
+
+    private int rotationLast;
+    private boolean flashlightStateLast;
+    private int motionFrames;
+    private long warmupTimer, stopTimer;
+
+    OpenCVHandler(JavaCameraView cameraBridgeViewBase,
+                  Activity activity, Recorder recorder) {
+        this.cameraBridgeViewBase = cameraBridgeViewBase;
+        this.activity = activity;
+        this.recorder = recorder;
+
+        this.initialized = false;
+    }
 
     /**
-     * Initialized class variables
-     * @param width current frame width
-     * @param height current frame height
+     * @return CameraBridgeViewBase class
      */
-    public void initMats(int width, int height) {
-        matYUV = new Mat((height / 2) + height, width, CvType.CV_8UC1);
-        matRGBA = new Mat();
+    public CameraBridgeViewBase getCameraBridgeViewBase() {
+        return cameraBridgeViewBase;
+    }
+
+    /**
+     * Initializes the components of the class.
+     * NOTE: Make sure the method is called no more than once to prevent memory leaks
+     */
+    public void initView() {
+        // Initialize CameraBridgeViewBase object
+        cameraBridgeViewBase.setCvCameraViewListener(this);
+        cameraBridgeViewBase.setCameraIndex(SettingsContainer.cameraID);
+        cameraBridgeViewBase.setVisibility(CameraBridgeViewBase.VISIBLE);
+
+        // Initialize variables
+        rotationLast = -1;
+        flashlightStateLast = false;
+        motionFrames = 0;
+        warmupTimer = 0;
+        stopTimer = 0;
+        inputRGBA = new Mat();
+        outputRGBA = new Mat();
+        matRGBAt = new Mat();
         matGray = new Mat();
-        matRefFloat = new Mat();
         matRef = new Mat();
-        kernel = Imgproc.getStructuringElement(Imgproc.CV_SHAPE_RECT, new Size(5, 5));
-        contours = new ArrayList<>();
-        hierarchy = new Mat();
+        matRefFloat = new Mat();
+        matDiff = new Mat();
+        channels = new ArrayList<>();
+
+        // Set initialized flag
+        initialized = true;
     }
 
     /**
-     * Detects new motion in frame and converts it to RGBA
-     * @param data new YUV frame from camera
+     * @return true if initView() was called
      */
-    public void feedNewYUVData(byte[] data) {
-        // Retrieve new data from camera
-        matYUV.put(0, 0, data);
+    public boolean isInitialized() {
+        return initialized;
+    }
 
-        // Convert to RGBA
-        Imgproc.cvtColor(matYUV, matRGBA, 95, 4);
+    @Override
+    public void onCameraViewStarted(int width, int height) {
+        Log.i(TAG, "onCameraViewStarted");
 
-        // Flip frame if needed
-        if (MainActivity.getSettingsContainer().flipFrame) {
-            Mat mat = matRGBA;
-            Core.rotate(mat, mat, 1);
-        }
+        // Reset times
+        warmupTimer = 0;
+        stopTimer = 0;
+    }
 
-        // Convert to gray
-        Imgproc.cvtColor(matRGBA, matGray, 10, 1);
+    @Override
+    public void onCameraViewStopped() {
+        Log.i(TAG, "onCameraViewStopped");
 
-        // Blur gray frame
-        Imgproc.GaussianBlur(matGray, matGray, blurSize, 0, 0);
+        // Stop recording
+        if (recorder.isRecording())
+            recorder.stopRecording();
+    }
 
-        // Fill reference frame on first run
-        if (matRefFloat.empty()) {
-            matGray.convertTo(matRefFloat, CvType.CV_32FC1);
-        }
+    @Override
+    public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
+        try {
+            // Read input RGBA image
+            inputRGBA = inputFrame.rgba();
 
-        // Accumulate reference frame
-        Imgproc.accumulateWeighted(matGray, matRefFloat, 0.5d);
-        matRefFloat.convertTo(matRef, CvType.CV_8UC1);
+            // Initialise warmup timer
+            if (warmupTimer == 0)
+                warmupTimer = System.currentTimeMillis();
 
-        // Find difference in frames
-        Core.absdiff(matGray, matRef, matGray);
+            // Calculate warmup time left
+            long warmupTimeLeft = System.currentTimeMillis() - warmupTimer;
 
-        // Threshold difference
-        Imgproc.threshold(matGray, matGray,
-                MainActivity.getSettingsContainer().binaryThreshold, 255, 0);
+            // Get current screen rotation angle
+            int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
 
-        // Filter difference
-        Imgproc.erode(matGray, matGray, kernel);
-        Imgproc.dilate(matGray, matGray, kernel);
-
-        // Clear contours list
-        contours.clear();
-
-        // Find contours
-        Imgproc.findContours(matGray, contours, hierarchy, 0, 2);
-        if (contours.size() > 0) {
-
-            // Find largest contour
-            int maxContourArea = 0;
-            int maxContourAreaIndex = 0;
-            for (int i = 0; i < contours.size(); i++) {
-                int contourArea = (int) Imgproc.contourArea(contours.get(i));
-                if (contourArea > maxContourArea) {
-                    maxContourArea = contourArea;
-                    maxContourAreaIndex = i;
-                }
+            // Rotate frame on different orientations
+            if (rotation == Surface.ROTATION_0) {
+                Core.transpose(inputRGBA, matRGBAt);
+                if (SettingsContainer.cameraID == CameraBridgeViewBase.CAMERA_ID_FRONT)
+                    Core.flip(matRGBAt, inputRGBA, 0);
+                else
+                    Core.flip(matRGBAt, inputRGBA, 1);
+            } else if (rotation == Surface.ROTATION_270) {
+                Core.flip(inputRGBA, inputRGBA, 0);
+                Core.flip(inputRGBA, inputRGBA, 1);
+            } else if (rotation == Surface.ROTATION_180) {
+                Core.transpose(inputRGBA, matRGBAt);
+                if (SettingsContainer.cameraID == CameraBridgeViewBase.CAMERA_ID_FRONT)
+                    Core.flip(matRGBAt, inputRGBA, 1);
+                else
+                    Core.flip(matRGBAt, inputRGBA, 0);
             }
 
-            // Check if new motion detected
-            if (maxContourArea > matGray.rows() * matGray.cols() *
-                    (MainActivity.getSettingsContainer().newMotionPercents / 100)) {
+            // Convert to grayscale
+            Imgproc.cvtColor(inputRGBA, matGray, Imgproc.COLOR_RGBA2GRAY);
 
-                // Increment number of motion frames
-                if (motionFrames < MainActivity.getSettingsContainer().minMotionFrames) {
+            // Fill reference frame on first run
+            if (warmupTimeLeft < warmupTimeout / 2
+                    || matGray.cols() != matRefFloat.cols()
+                    || matGray.rows() != matRefFloat.rows()) {
+                matGray.convertTo(matRefFloat, CvType.CV_32FC1);
+            }
+
+            // Find difference in frames
+            matRefFloat.convertTo(matRef, CvType.CV_8UC1);
+            Core.absdiff(matGray, matRef, matDiff);
+
+            // Accumulate reference frame
+            Imgproc.accumulateWeighted(matGray, matRefFloat, SettingsContainer.speedThreshold);
+
+            // Threshold difference
+            Imgproc.threshold(matDiff, matDiff, 20, 255, 0);
+
+            // Increment number of frames with motion
+            if (Core.countNonZero(matDiff) > matDiff.cols() * matDiff.rows()
+                    * SettingsContainer.sizeThreshold) {
+                if (warmupTimeLeft > warmupTimeout && motionFrames <= detectMotionFrames)
                     motionFrames++;
-                }
+            }
 
-                // Draw largest contour
-                if (MainActivity.getSettingsContainer().contourEnabled) {
-                    Rect rect = Imgproc.boundingRect(contours.get(maxContourAreaIndex));
-                    Imgproc.rectangle(matRGBA, rect.tl(), rect.br(), contoursColor, 2);
+            // Decrement number of motion frames
+            else if (motionFrames > 0)
+                motionFrames--;
+
+            // Start new recording
+            if (warmupTimeLeft > warmupTimeout && motionFrames >= detectMotionFrames) {
+                if (!recorder.isRecording()) {
+                    // Enable flashlight
+                    if (SettingsContainer.enableFlashlight)
+                        setFlashlight(true);
+
+                    // Start recording
+                    recorder.startRecording(inputRGBA.width(), inputRGBA.height(), 30);
                 }
-            } else {
-                // Decrement number of motion frames if no motion detected
-                if (motionFrames > 0) {
-                    motionFrames = motionFrames - 1;
+                stopTimer = 0;
+            }
+
+            // Stop recording
+            if (recorder.isRecording() && motionFrames <= 0) {
+                if (stopTimer == 0)
+                    stopTimer = System.currentTimeMillis();
+                if (System.currentTimeMillis() - stopTimer >= stopRecordingTimeout) {
+                    // Stop recording
+                    recorder.stopRecording();
+
+                    // Disable flashlight
+                    setFlashlight(false);
+
+                    // Reset warmup timer
+                    warmupTimer = System.currentTimeMillis();
                 }
             }
-        } else {
-            // Decrement number of motion frames if no motion detected
-            if (motionFrames> 0) {
-                motionFrames = motionFrames - 1;
+
+            // Set current timestamp
+            timestamp.setTime(System.currentTimeMillis());
+
+            // Add timestamp text
+            Imgproc.putText(inputRGBA, timestamp.toString(), new Point(10, 20),
+                    Core.FONT_HERSHEY_PLAIN, 1, textBackgroundColor, 2);
+            Imgproc.putText(inputRGBA, timestamp.toString(), new Point(10, 20),
+                    Core.FONT_HERSHEY_PLAIN, 1, textForegroundColor, 1);
+
+            // Record input frame
+            if (recorder.isRecording())
+                recorder.recordRGBAMat(inputRGBA);
+
+            // Clone object to output frame
+            inputRGBA.copyTo(outputRGBA);
+
+            // Create movement mask
+            channels.clear();
+            channels.add(Mat.zeros(matDiff.rows(), matDiff.cols(), matDiff.type()));
+            channels.add(matDiff);
+            channels.add(Mat.zeros(matDiff.rows(), matDiff.cols(), matDiff.type()));
+            Core.divide(matDiff, new Scalar(2), matDiff);
+            channels.add(matDiff);
+            Core.merge(channels, matDiff);
+
+            // Add mask to the output image
+            Core.add(outputRGBA, matDiff, outputRGBA);
+
+            // Add recording text
+            if (recorder.isRecording()) {
+                Imgproc.putText(outputRGBA, "Recording...", new Point(10, 35),
+                        Core.FONT_HERSHEY_PLAIN, 1, textBackgroundColor, 2);
+                Imgproc.putText(outputRGBA, "Recording...", new Point(10, 35),
+                        Core.FONT_HERSHEY_PLAIN, 1, textForegroundColor, 1);
             }
+
+            // Add warming up text
+            if (warmupTimeLeft < warmupTimeout) {
+                int warmupSeconds = (int) ((warmupTimeout - warmupTimeLeft) / 1000);
+                Imgproc.putText(outputRGBA, "Warming up: " + warmupSeconds + "s",
+                        new Point(10, 50), Core.FONT_HERSHEY_PLAIN, 1,
+                        textBackgroundColor, 2);
+                Imgproc.putText(outputRGBA, "Warming up: " + warmupSeconds + "s",
+                        new Point(10, 50), Core.FONT_HERSHEY_PLAIN, 1,
+                        textForegroundColor, 1);
+            }
+
+            // Resize to original size
+            Imgproc.resize(outputRGBA, outputRGBA, inputFrame.rgba().size());
+
+            // On rotation changed
+            if (rotation != rotationLast) {
+                // Set MAX_PRIORITY to the current thread
+                Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
+
+                // Set new scaling factor
+                if (rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180)
+                    cameraBridgeViewBase.setScaleY((float)
+                            ((inputRGBA.size().width * inputRGBA.size().width)
+                                    / (inputRGBA.size().height * inputRGBA.size().height)));
+                else
+                    cameraBridgeViewBase.setScaleY(1);
+            }
+
+            // Remember new rotation
+            rotationLast = rotation;
+
+            // Return frame
+            return outputRGBA;
+        } catch (Exception e) {
+            // Show error message
+            Log.e(TAG, "Error processing frame!", e);
         }
 
-        // Set motionDetected flag if motionFrames more than minMotionFrames
-        if (motionFrames >= MainActivity.getSettingsContainer().minMotionFrames) {
-            motionDetected = true;
-        } else if (motionFrames <= 0) {
-            motionDetected = false;
-        }
-
-        // Set current timestamp
-        timestamp.setTime(System.currentTimeMillis());
-
-        // Draw current timestamp
-        if (MainActivity.getSettingsContainer().drawTimestamp) {
-            Imgproc.putText(matRGBA, timestamp.toString(), new Point(10, 50), 2,
-                    1, textBackgroundColor, 2);
-            Imgproc.putText(matRGBA, timestamp.toString(), new Point(10, 50), 2,
-                    1, textForegroundColor, 1);
-        }
+        // Return raw frame if error occurs
+        return inputFrame.rgba();
     }
 
     /**
-     * Resets reference frame
+     * Turns on or off flashlight
+     *
+     * NOTE: Please add following code to the JavaCameraView class
+     * (file (in the OpenCV SDK): java/src/org.opencv/android/JavaCameraView.java)
+     *
+     *     public void turnOffTheFlash() {
+     *         Camera.Parameters params = mCamera.getParameters();
+     *         params.setFlashMode(params.FLASH_MODE_OFF);
+     *         mCamera.setParameters(params);
+     *     }
+     *
+     *     public void turnOnTheFlash() {
+     *         Camera.Parameters params = mCamera.getParameters();
+     *         params.setFlashMode(params.FLASH_MODE_TORCH);
+     *         mCamera.setParameters(params);
+     *     }
+     *
+     * @param state set to true to enable flashlight or false to disable it
      */
-    public void resetRefFrame() {
-        this.matRefFloat = new Mat();
-    }
+    private void setFlashlight(boolean state) {
+        if (state == flashlightStateLast)
+            return;
 
-    /**
-     * @return current RGBA frame
-     */
-    public Mat getMatRGBA() {
-        return this.matRGBA;
-    }
+        // Check if flashlight supported
+        if (activity.getApplicationContext().getPackageManager()
+                .hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) {
 
-    /**
-     * @return true if new motion detected
-     */
-    public boolean isMotionDetected() {
-        return this.motionDetected;
+            // Enable or disable flashlight
+            if (state)
+                cameraBridgeViewBase.turnOnTheFlash();
+            else
+                cameraBridgeViewBase.turnOffTheFlash();
+        }
+
+        flashlightStateLast = state;
     }
 }

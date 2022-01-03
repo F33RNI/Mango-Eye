@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Fern H. Mango-Eye android application
+ * Copyright (C) 2021 Fern H., Mango-Eye Android application
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,265 +22,247 @@
 package com.fern.mangoeye;
 
 import android.annotation.SuppressLint;
-import android.app.AlertDialog;
-import android.content.pm.ActivityInfo;
+import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.EditText;
-import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.Switch;
-import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.google.android.material.slider.Slider;
+
+import org.opencv.android.CameraBridgeViewBase;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
 
 public class SettingsActivity extends AppCompatActivity {
     private final String TAG = this.getClass().getName();
 
-    @SuppressLint("SourceLockedOrientationActivity")
+    private ArrayList<String> cameraOptions, externalFilesDirs, videoFormats;
+
+    // Local settings
+    private String externalFilesDir;
+    private int cameraID;
+    private boolean enableFlashlight;
+    private String videoFormat;
+    private double speedThreshold, sizeThreshold;
+
+    // Elements
+    private Spinner spinnerStorages, cameraIDSpinner, formatSpinner;
+    @SuppressLint("UseSwitchCompatOrMaterialCode")
+    private Switch switchFlashlight;
+    private Slider speedThresholdSlider, sizeThresholdSlider;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Screen parameters
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-        //requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
-        // Load activity
         setContentView(R.layout.activity_settings);
 
-        // Back button
-        findViewById(R.id.btn_settings_back).setOnClickListener(view -> finish());
+        // Get list of storages
+        File[] files = getBaseContext().getExternalFilesDirs(null);
+        externalFilesDirs = new ArrayList<>();
+        for (File file : files) externalFilesDirs.add(file.getAbsolutePath());
+        Log.i(TAG, "Available storages: " + Arrays.toString(externalFilesDirs.toArray()));
 
-        // Restore button
-        findViewById(R.id.btn_settings_restore).setOnClickListener(view ->
-                new AlertDialog.Builder(SettingsActivity.this)
-                        .setTitle(R.string.str_dialog_title_restore)
-                        .setMessage(R.string.str_dialog_reset_settings)
-                        .setPositiveButton(R.string.str_confirmation_btn_restore, (dialog, which) -> {
-                            // Reset settings to default
-                            MainActivity.setSettingsContainer(new SettingsContainer());
-                            SettingsHandler.saveSettings(MainActivity.settingsFile, this);
-                            updateView();
-                        })
-                        .setNegativeButton(R.string.str_confirmation_btn_cancel, (dialog, which) -> {
-                            // Do nothing
-                        })
-                        .setIcon(android.R.drawable.ic_dialog_alert)
-                        .show());
+        // Get list of cameras
+        cameraOptions = new ArrayList<>(Arrays.asList(
+                getResources().getStringArray(R.array.camera_options)));
 
-        // Connect seek bars
-        ((SeekBar) findViewById(R.id.seekBarDetection)).setOnSeekBarChangeListener(
-                new SeekBar.OnSeekBarChangeListener() {
-                    @Override
-                    public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                        ((TextView) findViewById(R.id.textDetection))
-                                .setText(String.valueOf(i + 1));
-                    }
+        // Create list of formats
+        videoFormats = new ArrayList<>();
+        videoFormats.add("mp4");
+        videoFormats.add("mkv");
 
-                    @Override
-                    public void onStartTrackingTouch(SeekBar seekBar) {
-                    }
+        // Initialize elements
+        spinnerStorages = findViewById(R.id.spinnerStorages);
+        cameraIDSpinner = findViewById(R.id.cameraIDSpinner);
+        switchFlashlight = findViewById(R.id.switchFlashlight);
+        formatSpinner = findViewById(R.id.formatSpinner);
+        speedThresholdSlider = findViewById(R.id.speedThresholdSlider);
+        sizeThresholdSlider = findViewById(R.id.sizeThresholdSlider);
 
-                    @Override
-                    public void onStopTrackingTouch(SeekBar seekBar) {
-                    }
-                });
+        // Connect Restore button
+        findViewById(R.id.settingsResetBtn).setOnClickListener(view -> {
+            // Reset settings to default
+            externalFilesDir = externalFilesDirs.get(0);
+            cameraID = CameraBridgeViewBase.CAMERA_ID_ANY;
+            enableFlashlight = true;
+            videoFormat = "mp4";
+            speedThreshold = 0.3;
+            sizeThreshold = 0.1;
 
-        ((SeekBar) findViewById(R.id.seekBarThreshold)).setOnSeekBarChangeListener(
-                new SeekBar.OnSeekBarChangeListener() {
-                    @Override
-                    public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                        ((TextView) findViewById(R.id.textThreshold))
-                                .setText(String.valueOf(i + 1));
-                    }
+            // Update view
+            updateView();
+        });
 
-                    @Override
-                    public void onStartTrackingTouch(SeekBar seekBar) {
-                    }
+        // Connect Save button
+        findViewById(R.id.settingsSaveBtn).setOnClickListener(view -> saveSettings());
 
-                    @Override
-                    public void onStopTrackingTouch(SeekBar seekBar) {
-                    }
-                });
+        // Connect Back button
+        findViewById(R.id.settingsBackBtn).setOnClickListener(view -> onPause());
 
-        ((SeekBar) findViewById(R.id.seekMotionFrames)).setOnSeekBarChangeListener(
-                new SeekBar.OnSeekBarChangeListener() {
-                    @Override
-                    public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                        ((TextView) findViewById(R.id.textMotionFrames))
-                                .setText(String.valueOf(i + 1));
-                    }
+        // Connect storage spinner
+        spinnerStorages.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parentView, View selectedItemView
+                    , int position, long id) {
+                externalFilesDir = externalFilesDirs.get(position);
+            }
 
-                    @Override
-                    public void onStartTrackingTouch(SeekBar seekBar) {
-                    }
+            @Override
+            public void onNothingSelected(AdapterView<?> parentView) { }
+        });
 
-                    @Override
-                    public void onStopTrackingTouch(SeekBar seekBar) {
-                    }
-                });
+        // Connect camera ID spinner
+        cameraIDSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parentView, View selectedItemView
+                    , int position, long id) {
+                if (position == 1)
+                    cameraID = CameraBridgeViewBase.CAMERA_ID_BACK;
+                else if (position == 2)
+                    cameraID = CameraBridgeViewBase.CAMERA_ID_FRONT;
+                else
+                    cameraID = CameraBridgeViewBase.CAMERA_ID_ANY;
+            }
 
-        // Connect spinner
-        ((Spinner) findViewById(R.id.spinnerStorages))
-                .setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-                    @Override
-                    public void onItemSelected(AdapterView<?> parentView, View selectedItemView
-                            , int position, long id) {
-                        SettingsContainer settingsContainer = MainActivity.getSettingsContainer();
-                        settingsContainer.filesDirectory =
-                                MainActivity.externalFilesDirs[position];
-                        MainActivity.setSettingsContainer(settingsContainer);
-                    }
+            @Override
+            public void onNothingSelected(AdapterView<?> parentView) { }
+        });
 
-                    @Override
-                    public void onNothingSelected(AdapterView<?> parentView) {
-                    }
+        // Connect enable flashlight switch
+        switchFlashlight.setOnCheckedChangeListener((compoundButton, b) ->
+                enableFlashlight = switchFlashlight.isChecked());
 
-                });
+        // Connect video format spinner
+        formatSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parentView, View selectedItemView
+                    , int position, long id) {
+                if (position == 1)
+                    videoFormat = "mkv";
+                else
+                    videoFormat = "mp4";
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> adapterView) { }
+        });
+
+        // Connect speed threshold slider
+        speedThresholdSlider.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
+            @Override
+            public void onStartTrackingTouch(@NonNull Slider slider) {
+                speedThreshold = slider.getValue();
+            }
+
+            @Override
+            public void onStopTrackingTouch(@NonNull Slider slider) {
+                speedThreshold = slider.getValue();
+            }
+        });
+
+        // Connect size threshold slider
+        sizeThresholdSlider.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
+            @Override
+            public void onStartTrackingTouch(@NonNull Slider slider) {
+                sizeThreshold = slider.getValue();
+            }
+
+            @Override
+            public void onStopTrackingTouch(@NonNull Slider slider) {
+                sizeThreshold = slider.getValue();
+            }
+        });
+
+        // Copy settings to local variables
+        this.externalFilesDir = SettingsContainer.externalFilesDir;
+        this.cameraID = SettingsContainer.cameraID;
+        this.enableFlashlight = SettingsContainer.enableFlashlight;
+        this.videoFormat = SettingsContainer.videoFormat;
+        this.speedThreshold = SettingsContainer.speedThreshold;
+        this.sizeThreshold = SettingsContainer.sizeThreshold;
 
         // Load view
         updateView();
-
-        // Save button
-        findViewById(R.id.btn_save_settings).setOnClickListener(view -> updateSettings());
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+
+        // Start main activity on pause
+        startActivity(new Intent(getApplicationContext(), MainActivity.class));
+        System.gc();
+        finish();
+    }
+
+    /**
+     * Updates activity elements with local settings variables
+     */
     private void updateView() {
-        // Seek Bars
-        ((SeekBar) findViewById(R.id.seekBarDetection)).setMax(19);
-        ((SeekBar) findViewById(R.id.seekBarDetection)).setProgress(
-                MainActivity.getSettingsContainer().newMotionPercents - 1);
+        // Storage
+        spinnerStorages.setAdapter(new ArrayAdapter<>(this,
+                R.layout.spinner_layout, R.id.textViewSpinner, externalFilesDirs));
+        if (externalFilesDirs.contains(externalFilesDir))
+            spinnerStorages.setSelection(externalFilesDirs.indexOf(externalFilesDir));
 
-        ((SeekBar) findViewById(R.id.seekBarThreshold)).setMax(14);
-        ((SeekBar) findViewById(R.id.seekBarThreshold)).setProgress(
-                MainActivity.getSettingsContainer().binaryThreshold - 1);
+        // Camera index
+        cameraIDSpinner.setAdapter(new ArrayAdapter<>(this,
+                R.layout.spinner_layout, R.id.textViewSpinner, cameraOptions));
+        if (cameraID == CameraBridgeViewBase.CAMERA_ID_BACK)
+            cameraIDSpinner.setSelection(1);
+        else if (cameraID == CameraBridgeViewBase.CAMERA_ID_FRONT)
+            cameraIDSpinner.setSelection(2);
+        else
+            cameraIDSpinner.setSelection(0);
 
-        ((SeekBar) findViewById(R.id.seekMotionFrames)).setMax(14);
-        ((SeekBar) findViewById(R.id.seekMotionFrames)).setProgress(
-                MainActivity.getSettingsContainer().minMotionFrames - 1);
+        // Enable flashlight
+        switchFlashlight.setChecked(enableFlashlight);
 
-        // System storages
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
-                R.layout.spinner_layout, R.id.text_view_spinner, MainActivity.externalFilesDirs);
-        ((Spinner) findViewById(R.id.spinnerStorages)).setAdapter(adapter);
-        ((Spinner) findViewById(R.id.spinnerStorages)).setSelection(MainActivity.getStorageIndex());
+        // Video format
+        formatSpinner.setAdapter(new ArrayAdapter<>(this,
+                R.layout.spinner_layout, R.id.textViewSpinner, videoFormats));
+        if (videoFormats.contains(videoFormat))
+            formatSpinner.setSelection(videoFormats.indexOf(videoFormat));
 
-        // Switches
-        ((Switch) findViewById(R.id.switchFlashlight)).setChecked(
-                MainActivity.getSettingsContainer().enableFlashlightOnMotion);
-        ((Switch) findViewById(R.id.switchEnableTimestamp)).setChecked(
-                MainActivity.getSettingsContainer().drawTimestamp);
-        ((Switch) findViewById(R.id.switchContour)).setChecked(
-                MainActivity.getSettingsContainer().contourEnabled);
-        ((Switch) findViewById(R.id.switchFlip)).setChecked(
-                MainActivity.getSettingsContainer().flipFrame);
-        ((Switch) findViewById(R.id.switchDimScreen)).setChecked(
-                MainActivity.getSettingsContainer().dimScreen);
+        // Speed threshold
+        speedThresholdSlider.setValue((float) speedThreshold);
 
-        // Timeouts
-        ((EditText) findViewById(R.id.editDimTimeot)).setText(String.valueOf(
-                MainActivity.getSettingsContainer().lowerBrightnessTimeout / 1000));
-        ((EditText) findViewById(R.id.editWarmupTimeot)).setText(String.valueOf(
-                MainActivity.getSettingsContainer().warmupTimeout / 1000));
-        ((EditText) findViewById(R.id.editRecordingTimeout)).setText(String.valueOf(
-                MainActivity.getSettingsContainer().stopRecordingTimeout / 1000));
-
-        // Other fields
-        ((EditText) findViewById(R.id.editAudioRate)).setText(String.valueOf(
-                MainActivity.getSettingsContainer().audioSampleRate));
-        ((EditText) findViewById(R.id.editVideoPreset)).setText(MainActivity
-                .getSettingsContainer().videoPreset);
-        ((EditText) findViewById(R.id.editVideoBitrate)).setText(String.valueOf(
-                MainActivity.getSettingsContainer().videoBitrate));
-        ((EditText) findViewById(R.id.editFormat)).setText(MainActivity
-                .getSettingsContainer().videoFormat);
-        ((EditText) findViewById(R.id.editContainer)).setText(MainActivity
-                .getSettingsContainer().videoContainer);
-        ((EditText) findViewById(R.id.editFrameWidth)).setText(String.valueOf(
-                MainActivity.getSettingsContainer().frameWidth));
-        ((EditText) findViewById(R.id.editFrameHeight)).setText(String.valueOf(
-                MainActivity.getSettingsContainer().frameHeight));
-        ((EditText) findViewById(R.id.editFrameRate)).setText(String.valueOf(
-                MainActivity.getSettingsContainer().frameRate));
+        // Size threshold
+        sizeThresholdSlider.setValue((float) sizeThreshold);
     }
 
-    private void updateSettings() {
+    /**
+     * Assigns local settings to a SettingsContainer class and calls SettingsHandler.saveSettings()
+     * to save the settings to a JSON file
+     */
+    private void saveSettings() {
         try {
-            // Seek bars
-            SettingsContainer settingsContainer = MainActivity.getSettingsContainer();
+            // Copy settings from local variables
+            SettingsContainer.externalFilesDir = this.externalFilesDir;
+            SettingsContainer.cameraID = this.cameraID;
+            SettingsContainer.enableFlashlight = this.enableFlashlight;
+            SettingsContainer.videoFormat = this.videoFormat;
+            SettingsContainer.speedThreshold = this.speedThreshold;
+            SettingsContainer.sizeThreshold = this.sizeThreshold;
 
-            settingsContainer.newMotionPercents =
-                    Integer.parseInt(((TextView)
-                            findViewById(R.id.textDetection)).getText().toString());
-            settingsContainer.binaryThreshold =
-                    Integer.parseInt(((TextView)
-                            findViewById(R.id.textThreshold)).getText().toString());
-            settingsContainer.minMotionFrames =
-                    Integer.parseInt(((TextView)
-                            findViewById(R.id.textMotionFrames)).getText().toString());
-
-            // Switches
-            settingsContainer.enableFlashlightOnMotion =
-                    ((Switch) findViewById(R.id.switchFlashlight)).isChecked();
-            settingsContainer.drawTimestamp =
-                    ((Switch) findViewById(R.id.switchEnableTimestamp)).isChecked();
-            settingsContainer.contourEnabled =
-                    ((Switch) findViewById(R.id.switchContour)).isChecked();
-            settingsContainer.flipFrame =
-                    ((Switch) findViewById(R.id.switchFlip)).isChecked();
-            settingsContainer.dimScreen =
-                    ((Switch) findViewById(R.id.switchDimScreen)).isChecked();
-
-            // Timeouts
-            settingsContainer.lowerBrightnessTimeout =
-                    Integer.parseInt(((EditText)
-                            findViewById(R.id.editDimTimeot)).getText().toString()) * 1000;
-            settingsContainer.warmupTimeout =
-                    Integer.parseInt(((EditText)
-                            findViewById(R.id.editWarmupTimeot)).getText().toString()) * 1000;
-            settingsContainer.stopRecordingTimeout =
-                    Integer.parseInt(((EditText)
-                            findViewById(R.id.editRecordingTimeout)).getText().toString()) * 1000;
-
-            // Other fields
-            settingsContainer.audioSampleRate =
-                    Integer.parseInt(((EditText)
-                            findViewById(R.id.editAudioRate)).getText().toString());
-            settingsContainer.videoPreset = ((EditText)
-                    findViewById(R.id.editVideoPreset)).getText().toString();
-            settingsContainer.videoBitrate =
-                    Integer.parseInt(((EditText)
-                            findViewById(R.id.editVideoBitrate)).getText().toString());
-            settingsContainer.videoFormat = ((EditText)
-                    findViewById(R.id.editFormat)).getText().toString();
-            settingsContainer.videoContainer = ((EditText)
-                    findViewById(R.id.editContainer)).getText().toString();
-            settingsContainer.frameWidth =
-                    Integer.parseInt(((EditText)
-                            findViewById(R.id.editFrameWidth)).getText().toString());
-            settingsContainer.frameHeight =
-                    Integer.parseInt(((EditText)
-                            findViewById(R.id.editFrameHeight)).getText().toString());
-            settingsContainer.frameRate =
-                    Integer.parseInt(((EditText)
-                            findViewById(R.id.editFrameRate)).getText().toString());
-
-            MainActivity.setSettingsContainer(settingsContainer);
+            // Save settings to file
             SettingsHandler.saveSettings(MainActivity.settingsFile, this);
-            Toast.makeText(this, "Settings saved successfully",
-                    Toast.LENGTH_LONG).show();
+            Toast.makeText(this, R.string.settings_saved,
+                    Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            Toast.makeText(this, "Wrong settings provided! Nothing saved",
+            Toast.makeText(this, R.string.error_wrong_settings,
                     Toast.LENGTH_LONG).show();
             Log.e(TAG, "Wrong settings provided!", e);
         }
-        finish();
     }
 }

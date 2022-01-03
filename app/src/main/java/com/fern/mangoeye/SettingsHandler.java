@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Fern H. Mango-Eye android application
+ * Copyright (C) 2021 Fern H., Mango-Eye Android application
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,9 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 
+/**
+ * This class provides reading / saving of settings (the SettingsContainer class) to a JSON file
+ */
 public class SettingsHandler {
     private final static String TAG = SettingsHandler.class.getName();
     
@@ -56,6 +59,9 @@ public class SettingsHandler {
      * Reads settings from JSON file
      */
     public void readSettings() {
+        // Log settings file location
+        Log.i(TAG, "Reading settings from " + settingsFile.getAbsolutePath());
+
         if (!settingsFile.exists())
             saveSettings(settingsFile, activity);
         try {
@@ -70,36 +76,39 @@ public class SettingsHandler {
             }
             bufferedReader.close();
             JSONObject jsonObject = new JSONObject(stringBuilder.toString());
-            SettingsContainer settingsContainer = MainActivity.getSettingsContainer();
 
-            settingsContainer.newMotionPercents = (int) jsonObject.get("new_motion_percents");
-            settingsContainer.binaryThreshold = (int) jsonObject.get("binary_threshold");
-            settingsContainer.minMotionFrames = (int) jsonObject.get("min_motion_frames");
-            settingsContainer.enableFlashlightOnMotion =
-                    (boolean) jsonObject.get("enable_flashlight_on_motion");
-            settingsContainer.drawTimestamp = (boolean) jsonObject.get("draw_timestamp");
-            settingsContainer.contourEnabled = (boolean) jsonObject.get("contour_enabled");
-            settingsContainer.flipFrame = (boolean) jsonObject.get("flip_frame");
-            settingsContainer.dimScreen = (boolean) jsonObject.get("dim_screen");
-            settingsContainer.lowerBrightnessTimeout =
-                    (int) jsonObject.get("lower_brightness_timeout");
-            settingsContainer.warmupTimeout = (int) jsonObject.get("warmup_timeout");
-            settingsContainer.stopRecordingTimeout = (int) jsonObject.get("stop_recording_timeout");
-            settingsContainer.audioSampleRate = (int) jsonObject.get("audio_sample_rate");
-            settingsContainer.videoPreset = (String) jsonObject.get("video_preset");
-            settingsContainer.videoBitrate = (int) jsonObject.get("video_bitrate");
-            settingsContainer.videoFormat = (String) jsonObject.get("video_format");
-            settingsContainer.videoContainer = (String) jsonObject.get("video_container");
-            settingsContainer.frameWidth = (int) jsonObject.get("frame_width");
-            settingsContainer.frameHeight = (int) jsonObject.get("frame_height");
-            settingsContainer.frameRate = (int) jsonObject.get("frame_rate");
-            settingsContainer.filesDirectory = (String) jsonObject.get("files_directory");
+            // Parse json object to SettingsContainer variables
+            SettingsContainer.externalFilesDir = jsonObject.getString("storage");
+            SettingsContainer.cameraID = jsonObject.getInt("camera_id");
+            SettingsContainer.enableFlashlight = jsonObject.getBoolean("enable_flashlight");
+            SettingsContainer.videoFormat = jsonObject.getString("video_format");
+            SettingsContainer.speedThreshold = jsonObject.getDouble("speed_threshold");
+            SettingsContainer.sizeThreshold = jsonObject.getDouble("size_threshold");
 
-            MainActivity.setSettingsContainer(settingsContainer);
+            // Check externalFilesDir
+            boolean storageAccepted = false;
+            try {
+                File testDirectory = new File(SettingsContainer.externalFilesDir);
+                if (!testDirectory.exists()) {
+                    if (!testDirectory.mkdirs())
+                        throw new Exception();
+                }
+                if (testDirectory.exists() && testDirectory.isDirectory())
+                    storageAccepted = true;
+            } catch (Exception ignored) { }
+
+            // If storage is not correct
+            if (!storageAccepted) {
+                // Set first storage
+                SettingsContainer.externalFilesDir
+                        = activity.getBaseContext().getExternalFilesDirs(null)[0]
+                        .getAbsolutePath();
+
+                // Save with new storage
+                saveSettings(settingsFile, activity);
+            }
+
         } catch (Exception e) {
-            // Show error message
-            Toast.makeText(activity, "Error parsing settings!",
-                    Toast.LENGTH_SHORT).show();
             Log.e(TAG, "Error parsing settings!", e);
 
             // Remove file and try again
@@ -112,9 +121,9 @@ public class SettingsHandler {
             }
             // Exit application
             else {
-                activity.finish();
                 System.gc();
-                System.exit(0);
+                activity.finishAffinity();
+                //System.exit(0);
             }
         }
     }
@@ -127,47 +136,12 @@ public class SettingsHandler {
         try {
             // Create new JSONObject
             JSONObject jsonObject = new JSONObject();
-            jsonObject.put("new_motion_percents",
-                    MainActivity.getSettingsContainer().newMotionPercents);
-            jsonObject.put("binary_threshold",
-                    MainActivity.getSettingsContainer().binaryThreshold);
-            jsonObject.put("min_motion_frames",
-                    MainActivity.getSettingsContainer().minMotionFrames);
-            jsonObject.put("enable_flashlight_on_motion",
-                    MainActivity.getSettingsContainer().enableFlashlightOnMotion);
-            jsonObject.put("draw_timestamp",
-                    MainActivity.getSettingsContainer().drawTimestamp);
-            jsonObject.put("contour_enabled",
-                    MainActivity.getSettingsContainer().contourEnabled);
-            jsonObject.put("flip_frame",
-                    MainActivity.getSettingsContainer().flipFrame);
-            jsonObject.put("dim_screen",
-                    MainActivity.getSettingsContainer().dimScreen);
-            jsonObject.put("lower_brightness_timeout",
-                    MainActivity.getSettingsContainer().lowerBrightnessTimeout);
-            jsonObject.put("warmup_timeout",
-                    MainActivity.getSettingsContainer().warmupTimeout);
-            jsonObject.put("stop_recording_timeout",
-                    MainActivity.getSettingsContainer().stopRecordingTimeout);
-            jsonObject.put("audio_sample_rate",
-                    MainActivity.getSettingsContainer().audioSampleRate);
-            jsonObject.put("video_preset",
-                    MainActivity.getSettingsContainer().videoPreset);
-            jsonObject.put("video_bitrate",
-                    MainActivity.getSettingsContainer().videoBitrate);
-            jsonObject.put("video_format",
-                    MainActivity.getSettingsContainer().videoFormat);
-            jsonObject.put("video_container",
-                    MainActivity.getSettingsContainer().videoContainer);
-            jsonObject.put("frame_width",
-                    MainActivity.getSettingsContainer().frameWidth);
-            jsonObject.put("frame_height",
-                    MainActivity.getSettingsContainer().frameHeight);
-            jsonObject.put("frame_rate",
-                    MainActivity.getSettingsContainer().frameRate);
-            jsonObject.put("files_directory",
-                    MainActivity.getSettingsContainer().filesDirectory);
-
+            jsonObject.put("storage", SettingsContainer.externalFilesDir);
+            jsonObject.put("camera_id", SettingsContainer.cameraID);
+            jsonObject.put("enable_flashlight", SettingsContainer.enableFlashlight);
+            jsonObject.put("video_format", SettingsContainer.videoFormat);
+            jsonObject.put("speed_threshold", SettingsContainer.speedThreshold);
+            jsonObject.put("size_threshold", SettingsContainer.sizeThreshold);
 
             // Write JSONObject to file
             FileWriter fileWriter = new FileWriter(settingsFile);
@@ -177,13 +151,14 @@ public class SettingsHandler {
 
         } catch (Exception e) {
             // Show error message
-            Toast.makeText(activity, "Error saving settings!",
+            Toast.makeText(activity, R.string.error_saving_settings,
                     Toast.LENGTH_SHORT).show();
             Log.e(TAG, "Error saving settings!", e);
 
             // Exit application
-            activity.finish();
-            // System.exit(0);
+            System.gc();
+            activity.finishAffinity();
+            //System.exit(0);
         }
     }
 }

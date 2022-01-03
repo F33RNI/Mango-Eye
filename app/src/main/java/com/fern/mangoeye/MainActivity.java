@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Fern H. Mango-Eye android application
+ * Copyright (C) 2021 Fern H., Mango-Eye Android application
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,38 +22,30 @@
 package com.fern.mangoeye;
 
 import android.Manifest;
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.PowerManager;
 import android.util.Log;
-import android.view.Window;
+import android.view.View;
 import android.view.WindowManager;
-import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
-import org.bytedeco.javacv.FFmpegLogCallback;
+import org.bytedeco.javacpp.Loader;
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 
 import java.io.File;
-import java.util.Arrays;
 
-
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements View.OnLongClickListener {
     private final String TAG = this.getClass().getName();
-    private final String[] PERMISSIONS = {
+
+    private static final String[] PERMISSIONS = {
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.READ_EXTERNAL_STORAGE,
@@ -62,26 +54,11 @@ public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 1;
 
     public static File settingsFile;
-    public static String[] externalFilesDirs;
-    private static SettingsContainer settingsContainer;
 
-    private Recorder recorder;
-    private CameraView cameraView;
-    private RelativeLayout recordLayout;
-    private boolean paused = false, pausedOnStart = false;
-
-    private PowerManager.WakeLock wakeLock;
-
-    public static SettingsContainer getSettingsContainer() {
-        return settingsContainer;
-    }
-
-    public static void setSettingsContainer(SettingsContainer settingsContainer) {
-        MainActivity.settingsContainer = settingsContainer;
-    }
+    private OpenCVHandler openCVHandler;
 
     /**
-     * Checks if OpenCV library is loaded
+     * Checks if OpenCV library is loaded and asks for permissions
      */
     private final BaseLoaderCallback baseLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -89,17 +66,12 @@ public class MainActivity extends AppCompatActivity {
             if (status == LoaderCallbackInterface.SUCCESS) {
                 Log.i("OpenCV", "OpenCV loaded successfully");
 
-                // Parse settings
-                settingsContainer = new SettingsContainer();
-                SettingsHandler settingsHandler = new SettingsHandler(settingsFile,
-                        MainActivity.this);
-                settingsHandler.readSettings();
-
                 // Request permissions
                 if (hasPermissions(MainActivity.this, PERMISSIONS)) {
                     Log.i(TAG, "Permissions granted");
 
-                    initFilesDir();
+                    // Initialize OpenCVHandler class
+                    openCVHandler.initView();
                 } else {
                     // Grant permissions
                     Log.w(TAG, "Not all permissions granted");
@@ -109,43 +81,48 @@ public class MainActivity extends AppCompatActivity {
             }
             else {
                 super.onManagerConnected(status);
-                Toast.makeText(MainActivity.this, "OpenCV not loaded!",
-                        Toast.LENGTH_SHORT).show();
+                Toast.makeText(MainActivity.this, R.string.opencv_not_loaded,
+                        Toast.LENGTH_LONG).show();
 
-                // Close the application because OpenCV library not loaded
-                finish();
-                //System.exit(0);
+                // Exit back to home screen
+                closeActivity();
             }
         }
     };
 
-
     @Override
-    public void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        FFmpegLogCallback.set();
 
-        // Set flag
-        pausedOnStart = true;
-
-        // Screen parameters
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        // Enable screen always on
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        // Get settings file
-        settingsFile = new File(getBaseContext().getExternalFilesDir( null),
-                "settings.json");
-
-        // Get list of storages
-        File[] files = getBaseContext().getExternalFilesDirs(null);
-        externalFilesDirs = new String[files.length];
-        for (int i = 0; i < files.length; i++)
-            externalFilesDirs[i] = files[i].getAbsolutePath();
-        Log.i(TAG, "Available storages: " + Arrays.toString(externalFilesDirs));
-
-        // Load main activity
+        // Open layout
         setContentView(R.layout.activity_main);
+
+        // Remove action bar
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().hide();
+        }
+
+        // Load and parse settings
+        if (!SettingsContainer.settingsLoaded) {
+            settingsFile = new File(getBaseContext().getExternalFilesDir(null),
+                    "settings.json");
+            new SettingsHandler(settingsFile, this).readSettings();
+        }
+
+        // Connect layout long click
+        findViewById(R.id.mainLayout).setOnLongClickListener(this);
+
+        // Initialize OpenCVHandler class
+        openCVHandler = new OpenCVHandler(findViewById(R.id.javaCameraView), this, new Recorder(this));
+
+        // Load FFMPEG libraries
+        Log.i(TAG, "Loading ffmpeg libraries");
+        Loader.load(org.bytedeco.ffmpeg.global.avutil.class);
+        Loader.load(org.bytedeco.ffmpeg.global.avcodec.class);
+        Loader.load(org.bytedeco.ffmpeg.global.avformat.class);
 
         // Load OpenCV library and init layout
         if (!OpenCVLoader.initDebug()) {
@@ -159,57 +136,41 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Created directory or Uri for application on new and old devices
-     */
-    private void initFilesDir() {
-        Log.i(TAG, "Checking MangoEye directory");
-
-        // Check if storage is available
-        if (getStorageIndex() < 0) {
-            Toast.makeText(this, "Previous files directory not available! " +
-                    "Using storage: " + externalFilesDirs[0],
-                    Toast.LENGTH_LONG).show();
-            Log.w(TAG,"Previous storage not available! Using storage: "
-                    + externalFilesDirs[0]);
-
-            // Update settings
-            settingsContainer.filesDirectory = externalFilesDirs[0];
-            SettingsHandler.saveSettings(settingsFile, this);
-        }
-
-        // Continue if storage exists
-        initModules();
+    // Activity long press
+    @Override
+    public boolean onLongClick(View view) {
+        // Start settings activity on long click
+        startActivity(new Intent(getApplicationContext(), SettingsActivity.class));
+        System.gc();
+        finish();
+        return false;
     }
 
-    public static int getStorageIndex() {
-        int index = -1;
-        for (int i = 0; i < externalFilesDirs.length; i++) {
-            if (externalFilesDirs[i].trim()
-                    .replace("/", "").replace("\\", "")
-                    .equals(settingsContainer.filesDirectory.trim()
-                            .replace("/", "").replace("\\", ""))) {
-                index = i;
-                break;
-            }
-        }
-        return index;
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        // Enable OpenCV view
+        if (openCVHandler != null && openCVHandler.isInitialized())
+            openCVHandler.getCameraBridgeViewBase().enableView();
     }
 
-    /**
-     * Checks app directory, initializes CameraView and controls brightness
-     */
-    private void initModules() {
-        Log.i(TAG, "Initializing modules");
+    @Override
+    protected void onPause() {
+        super.onPause();
 
-        // Add camera preview to the layout if permissions were granted
-        initCameraView();
+        // Disable OpenCV view
+        if (openCVHandler != null && openCVHandler.isInitialized())
+            openCVHandler.getCameraBridgeViewBase().disableView();
+    }
 
-        // Dim screen
-        brightnessControl();
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
 
-        pausedOnStart = false;
-        Log.i(TAG, "Initialization finished");
+        // Disable OpenCV view
+        if (openCVHandler != null && openCVHandler.isInitialized())
+            openCVHandler.getCameraBridgeViewBase().disableView();
     }
 
     /**
@@ -244,174 +205,21 @@ public class MainActivity extends AppCompatActivity {
         if (hasPermissions(this, PERMISSIONS)) {
             Log.i(TAG, "Permissions granted");
 
-            initFilesDir();
+            // Initialize OpenCVHandler class
+            openCVHandler.initView();
         }
         else {
-            Toast.makeText(this, "Permissions not granted!",
+            Toast.makeText(this, R.string.permissions_not_granted,
                     Toast.LENGTH_LONG).show();
 
-            // Close the application because the permissions are not granted
-            finish();
-            //System.exit(0);
+            // Exit back to home screen
+            closeActivity();
         }
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-
-        if (paused) {
-            paused = false;
-            initFilesDir();
-        }
-    }
-
-    /**
-     * At the beginning, sets the original brightness,
-     * and after lower_brightness_timeout milliseconds - the minimum.
-     */
-    @SuppressLint("InvalidWakeLockTag")
-    void brightnessControl() {
-        // Restore old brightness
-        try {
-            // Back to default
-            WindowManager.LayoutParams layoutParams = getWindow().getAttributes();
-            layoutParams.screenBrightness = -1f;
-            getWindow().setAttributes(layoutParams);
-
-        } catch (Exception ignored) { }
-
-        // Dim screen after lower_brightness_timeout
-        try {
-            if (wakeLock != null)
-                wakeLock.release();
-            // Set lowerBrightnessTimeout to 0 to keep screen always at default brightness
-            if (settingsContainer.dimScreen) {
-                /*PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                wakeLock = pm.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK,
-                        this.getLocalClassName());
-                wakeLock.acquire(settingsContainer.lowerBrightnessTimeout);*/
-
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                            WindowManager.LayoutParams layoutParams = getWindow().getAttributes();
-                            layoutParams.screenBrightness = 0f;
-                            getWindow().setAttributes(layoutParams);
-                        },
-                        settingsContainer.lowerBrightnessTimeout);
-            }
-        } catch (Exception ignored) { }
-    }
-
-    @SuppressLint("MissingSuperCall")
-    @Override
-    protected void onPause() {
-        super.onPause();
-
-        if (!pausedOnStart) {
-            paused = true;
-
-            // Stop recording
-            if (recorder != null)
-                recorder.stopRecording();
-
-            // Release camera
-            if (cameraView != null)
-                cameraView.stopCamera();
-
-            // Remove preview from layout
-            recordLayout.removeView(cameraView);
-        }
-
-        // Release wakeLock
-        if (wakeLock != null) {
-            wakeLock.release();
-            wakeLock = null;
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-
-        // Stop recording
-        if (recorder!= null)
-            recorder.stopRecording();
-
-        // Release camera
-        if (cameraView != null)
-            cameraView.stopCamera();
-
-        // Release wakeLock
-        if (wakeLock != null) {
-            wakeLock.release();
-            wakeLock = null;
-        }
-
-        // Close thread
-        ActivityCompat.finishAffinity(this);
-        //System.exit(0);
-    }
-
-    /**
-     * Initializes cameraView and adds it to the layout
-     */
-    private void initCameraView() {
-        // Create Recorder class
-        recorder = new Recorder(this);
-
-        // Create OpenCVHandler class
-        OpenCVHandler openCVHandler = new OpenCVHandler();
-
-        // Create CameraView class
-        cameraView = new CameraView(this, recorder, openCVHandler);
-
-        // Show hint on short click
-        cameraView.setOnClickListener(view -> {
-            Toast.makeText(MainActivity.this,
-                    "Long press to open list and settings", Toast.LENGTH_LONG).show();
-            brightnessControl();
-        });
-
-        // Add long click action
-        cameraView.setOnLongClickListener(view -> {
-            longClick();
-            return true;
-        });
-
-        recordLayout = findViewById(R.id.record_layout);
-        recordLayout.post(() -> runOnUiThread(() -> {
-            // Calculate size and margins
-            float sizeK = recordLayout.getHeight() / (float) settingsContainer.frameHeight;
-            if (recordLayout.getWidth() / (float) settingsContainer.frameWidth < sizeK)
-                sizeK = recordLayout.getWidth() / (float) settingsContainer.frameWidth;
-
-            int actualSizeWidth = (int) (settingsContainer.frameWidth * sizeK);
-            int actualSizeHeight = (int) (settingsContainer.frameHeight * sizeK);
-
-            LinearLayout.LayoutParams layoutParam =
-                    new LinearLayout.LayoutParams(actualSizeWidth, actualSizeHeight);
-            layoutParam.topMargin = (recordLayout.getHeight() - actualSizeHeight) / 2;
-            layoutParam.leftMargin = (recordLayout.getWidth() - actualSizeWidth) / 2;
-
-            // Add CameraView to record_layout
-            recordLayout.addView(cameraView, layoutParam);
-
-            Log.i(TAG, "Camera preview started");
-        }));
-    }
-
-    /**
-     * Opens ViewActivity on long click on CameraView
-     */
-    private void longClick() {
-        // Stop recording
-        if (recorder != null && recorder.isRecording())
-            recorder.stopRecording();
-
-        // Pause application
-        onPause();
-
-        // Open View Activity
-        startActivity(new Intent(getApplicationContext(), ViewActivity.class));
+    private void closeActivity() {
+        System.gc();
+        finishAffinity();
+        finish();
     }
 }

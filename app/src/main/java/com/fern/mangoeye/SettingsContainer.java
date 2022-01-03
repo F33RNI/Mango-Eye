@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Fern H. Mango-Eye android application
+ * Copyright (C) 2021 Fern H., Mango-Eye Android application
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,52 +21,17 @@
 
 package com.fern.mangoeye;
 
+import org.opencv.android.CameraBridgeViewBase;
+
+/**
+ * This class stores application settings
+ */
 public class SettingsContainer {
-    public int newMotionPercents;
-    public int binaryThreshold;
-    public int minMotionFrames;
-    public boolean enableFlashlightOnMotion;
-    public boolean drawTimestamp;
-    public boolean contourEnabled;
-    public boolean flipFrame;
-    public boolean dimScreen;
-    public int lowerBrightnessTimeout;
-    public int warmupTimeout;
-    public int stopRecordingTimeout;
-    public int audioSampleRate;
-    public String videoPreset;
-    public int videoBitrate;
-    public String videoFormat;
-    public String videoContainer;
-    public int frameWidth;
-    public int frameHeight;
-    public int frameRate;
-    public String filesDirectory;
-
-
-    /**
-     * This class stores application settings
-     */
-    SettingsContainer() {
-        this.newMotionPercents = 2;
-        this.binaryThreshold = 5;
-        this.minMotionFrames = 7;
-        this.enableFlashlightOnMotion = true;
-        this.drawTimestamp = true;
-        this.contourEnabled = true;
-        this.flipFrame = false;
-        this.dimScreen = true;
-        this.lowerBrightnessTimeout = 10000;
-        this.warmupTimeout = 5000;
-        this.stopRecordingTimeout = 10000;
-        this.audioSampleRate = 22050;
-        this.videoPreset = "superfast";
-        this.videoBitrate = 2000;
-        this.videoFormat = "mp4";
-        this.videoContainer = "mp4";
-        this.frameWidth = 1280;
-        this.frameHeight = 720;
-        this.frameRate = 30;
-        this.filesDirectory = "";
-    }
+    public static boolean settingsLoaded = false;
+    public static String externalFilesDir = "";
+    public static int cameraID = CameraBridgeViewBase.CAMERA_ID_ANY;
+    public static boolean enableFlashlight = true;
+    public static String videoFormat = "mp4";
+    public static double speedThreshold = 0.3;
+    public static double sizeThreshold = 0.1;
 }

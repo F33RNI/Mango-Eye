@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mango Eye</string>
+    <string name="str_back">Назад</string>
+    <string name="str_reset_to_default">Вернуть</string>
+    <string name="files_settings">Настройки файлов</string>
+    <string name="files_directory">Директория файлов:</string>
+    <string name="video_settings">Настройки видео</string>
+    <string name="camera">Камера:</string>
+    <string name="video_format">Формат видеофайла</string>
+    <string name="enable_flashlight_on_motion">Включать фонарик при записи</string>
+    <string name="motion_detection_settings">Настройки детектора движений</string>
+    <string name="speed_threshold">Скоростной порог:</string>
+    <string name="size_threshold">Порог размера:</string>
+    <string name="save">Сохранить</string>
+    <string name="settings_saved">Настройки сохранены</string>
+    <string name="error_wrong_settings">Ошибка! Неверные настройки!</string>
+    <string name="opencv_not_loaded">OpenCV не загружена!</string>
+    <string name="permissions_not_granted">Разрешения не предоставлены!</string>
+    <string name="error_creating_new_file">Ошибка создания нового файла!</string>
+    <string name="error_recording_frame">Ошибка записи кадра!</string>
+    <string name="error_finishing_record">Ошибка завершения записи!</string>
+    <string name="error_starting_record">Ошибка начала записи!</string>
+    <string name="error_saving_settings">Ошибка при сохранении настроек!</string>
+    <string-array name="camera_options">
+        <item>Любая</item>
+        <item>Основная</item>
+        <item>Фронтальная</item>
+    </string-array>
+</resources>

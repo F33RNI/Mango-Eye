@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Fern H. Mango-Eye android application
+ * Copyright (C) 2021 Fern H., Mango-Eye Android application
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import android.widget.Toast;
 
 import androidx.core.app.ActivityCompat;
 
+import org.bytedeco.javacpp.Loader;
 import org.bytedeco.javacv.FFmpegFrameRecorder;
 import org.bytedeco.javacv.Frame;
 import org.opencv.core.Mat;
@@ -46,7 +47,6 @@ public class Recorder {
     private final String TAG = this.getClass().getName();
 
     private final Activity activity;
-
     private FFmpegFrameRecorder fFmpegFrameRecorder;
     private AudioRecordRunnable audioRecordRunnable;
     private Thread audioThread;
@@ -54,30 +54,26 @@ public class Recorder {
     private Frame frameYUV = null;
     private long startTime;
     private byte[] rgbaBytes;
-    private int frameWidth, frameHeight;
-    private int frameRate;
 
     Recorder(Activity activity) {
         this.activity = activity;
-        this.frameWidth = MainActivity.getSettingsContainer().frameWidth;
-        this.frameHeight = MainActivity.getSettingsContainer().frameHeight;
-        this.frameRate = MainActivity.getSettingsContainer().frameRate;
     }
 
     /**
      * Starts recording video and audio
      */
-    public void startRecording() {
+    public void startRecording(int frameWidth, int frameHeight, int frameRate) {
         try {
             Log.i(TAG, "Starting new recording");
-            initRecorder();
+            initRecorder(frameWidth, frameHeight, frameRate);
             fFmpegFrameRecorder.start();
             startTime = System.currentTimeMillis();
             recording = true;
-            audioThread.start();
+            activity.runOnUiThread(() -> audioThread.start());
         } catch (Exception e) {
-            Toast.makeText(activity, "Error starting record!", Toast.LENGTH_SHORT).show();
             Log.e(TAG, "Error starting record!", e);
+            activity.runOnUiThread(() -> Toast.makeText(activity, R.string.error_starting_record,
+                    Toast.LENGTH_SHORT).show());
         }
     }
 
@@ -107,8 +103,10 @@ public class Recorder {
                 //outputStream.flush();
                 //outputStream.close();
             } catch (Exception e) {
-                Toast.makeText(activity, "Error finishing record!", Toast.LENGTH_SHORT).show();
                 Log.e(TAG, "Error finishing record!", e);
+                activity.runOnUiThread(
+                        () -> Toast.makeText(activity, R.string.error_finishing_record,
+                                Toast.LENGTH_SHORT).show());
             }
             fFmpegFrameRecorder = null;
             frameYUV = null;
@@ -141,8 +139,10 @@ public class Recorder {
         }
         // Stop recording on error
         catch(FFmpegFrameRecorder.Exception e) {
-            Toast.makeText(activity, "Error recording frame!", Toast.LENGTH_SHORT).show();
             Log.e(TAG, "Error recording frame!", e);
+            activity.runOnUiThread(() ->
+                    Toast.makeText(activity, R.string.error_recording_frame,
+                            Toast.LENGTH_SHORT).show());
             stopRecording();
         }
     }
@@ -151,23 +151,12 @@ public class Recorder {
         return recording;
     }
 
-    public void setFrameSize(int frameWidth, int frameHeight) {
-        this.frameWidth = frameWidth;
-        this.frameHeight = frameHeight;
-    }
-
-    public void setFrameRate(int frameRate) {
-        this.frameRate = frameRate;
-    }
-
-    private void initRecorder() {
+    private void initRecorder(int frameWidth, int frameHeight, int frameRate) {
         Log.w(TAG, "init recorder");
 
-        if (frameYUV == null) {
-            frameYUV = new Frame(frameWidth, frameHeight, Frame.DEPTH_UBYTE, 4);
-            rgbaBytes = new byte[frameWidth * frameHeight * 4];
-            Log.i(TAG, "frameYUV created");
-        }
+        frameYUV = new Frame(frameWidth, frameHeight, Frame.DEPTH_UBYTE, 4);
+        rgbaBytes = new byte[frameWidth * frameHeight * 4];
+        Log.i(TAG, "frameYUV created");
 
         File file = getNewFile();
         if (file == null)
@@ -178,21 +167,21 @@ public class Recorder {
         fFmpegFrameRecorder =
                 new FFmpegFrameRecorder(file, frameWidth, frameHeight, 1);
 
-        fFmpegFrameRecorder.setFormat(MainActivity.getSettingsContainer().videoFormat);
+        if (SettingsContainer.videoFormat.equals("mkv"))
+            fFmpegFrameRecorder.setFormat("matroska");
+        else
+            fFmpegFrameRecorder.setFormat("mp4");
         fFmpegFrameRecorder.setVideoCodec(AV_CODEC_ID_H264);
         fFmpegFrameRecorder.setAudioCodec(AV_CODEC_ID_AAC);
         fFmpegFrameRecorder.setPixelFormat(AV_PIX_FMT_YUV420P);
-        fFmpegFrameRecorder.setSampleRate(MainActivity.getSettingsContainer().audioSampleRate);
-        fFmpegFrameRecorder.setVideoOption("preset",
-                MainActivity.getSettingsContainer().videoPreset);
+        fFmpegFrameRecorder.setSampleRate(22050);
+        fFmpegFrameRecorder.setVideoOption("preset", "ultrafast");
 
         fFmpegFrameRecorder.setVideoQuality(0);
-        fFmpegFrameRecorder.setVideoBitrate(
-                MainActivity.getSettingsContainer().videoBitrate * 1024);
+        fFmpegFrameRecorder.setVideoBitrate(2000 * 1024);
         fFmpegFrameRecorder.setFrameRate(frameRate);
 
-        audioRecordRunnable = new AudioRecordRunnable(fFmpegFrameRecorder,
-                MainActivity.getSettingsContainer().audioSampleRate);
+        audioRecordRunnable = new AudioRecordRunnable(fFmpegFrameRecorder, 22050);
         audioThread = new Thread(audioRecordRunnable);
 
         Log.i(TAG, "Recorder initialize success");
@@ -205,9 +194,8 @@ public class Recorder {
                     new SimpleDateFormat("dd_MM_yyyy_HH_mm_ss", Locale.US);
             String newFileName = simpleDateFormat.format(System.currentTimeMillis());
 
-            File newFile = new File(MainActivity.getSettingsContainer().filesDirectory
-                    + "/" + newFileName + "." +
-                    MainActivity.getSettingsContainer().videoContainer);
+            File newFile = new File(SettingsContainer.externalFilesDir
+                    + "/" + newFileName + "." + SettingsContainer.videoFormat);
 
             // Replace if file exists
             if (newFile.exists())
@@ -217,8 +205,10 @@ public class Recorder {
             return newFile;
 
         } catch (Exception e) {
-            Toast.makeText(activity, "Error creating new file!", Toast.LENGTH_LONG).show();
             Log.e(TAG, "Error creating new file!", e);
+            activity.runOnUiThread(() ->
+                    Toast.makeText(activity, R.string.error_creating_new_file,
+                            Toast.LENGTH_LONG).show());
             ActivityCompat.finishAffinity(activity);
             //System.exit(0);
         }
