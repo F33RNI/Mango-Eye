@@ -32,6 +32,7 @@ public class SettingsContainer {
     public static int cameraID = CameraBridgeViewBase.CAMERA_ID_ANY;
     public static boolean enableFlashlight = true;
     public static String videoFormat = "mp4";
-    public static double speedThreshold = 0.3;
+    public static int sensitivity = 25;
     public static double sizeThreshold = 0.1;
+    public static int serverPort = 5000;
 }

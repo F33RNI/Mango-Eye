@@ -134,6 +134,12 @@ public class MainActivity extends AppCompatActivity implements View.OnLongClickL
             Log.i(TAG, "OpenCV library found inside package. Using it!");
             baseLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
         }
+
+        // Start web server
+        if (!WebServer.isServerListening()) {
+            WebServer.setServerPort(SettingsContainer.serverPort);
+            WebServer.startServer(this);
+        }
     }
 
     // Activity long press

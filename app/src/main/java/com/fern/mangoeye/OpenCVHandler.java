@@ -45,6 +45,7 @@ public class OpenCVHandler implements CameraBridgeViewBase.CvCameraViewListener2
     private static final int detectMotionFrames = 5;
     private static final long stopRecordingTimeout = 5000;
     private static final long warmupTimeout = 5000;
+    private static final double speedThreshold = 0.3;
 
     private final JavaCameraView cameraBridgeViewBase;
     private final Activity activity;
@@ -52,7 +53,8 @@ public class OpenCVHandler implements CameraBridgeViewBase.CvCameraViewListener2
 
     private boolean initialized;
 
-    private Mat inputRGBA, outputRGBA, matRGBAt, matGray, matRef, matRefFloat, matDiff;
+    private Mat inputRGBA, inputGray, outputRGBA, matRGBAt;
+    private Mat matRef, matRefFloat, matDiff, matDiffRGBA;
     private List<Mat> channels;
 
     private final Timestamp timestamp = new Timestamp(0);
@@ -96,13 +98,17 @@ public class OpenCVHandler implements CameraBridgeViewBase.CvCameraViewListener2
         motionFrames = 0;
         warmupTimer = 0;
         stopTimer = 0;
+
+        // Initialize mats
         inputRGBA = new Mat();
+        inputGray = new Mat();
         outputRGBA = new Mat();
         matRGBAt = new Mat();
-        matGray = new Mat();
+
         matRef = new Mat();
         matRefFloat = new Mat();
         matDiff = new Mat();
+        matDiffRGBA = new Mat();
         channels = new ArrayList<>();
 
         // Set initialized flag
@@ -120,9 +126,17 @@ public class OpenCVHandler implements CameraBridgeViewBase.CvCameraViewListener2
     public void onCameraViewStarted(int width, int height) {
         Log.i(TAG, "onCameraViewStarted");
 
-        // Reset times
+        // Reset variables
+        rotationLast = -1;
+        flashlightStateLast = false;
+        motionFrames = 0;
         warmupTimer = 0;
         stopTimer = 0;
+
+        // Disable auto focus
+        cameraBridgeViewBase.disableAutoFocus();
+
+        System.gc();
     }
 
     @Override
@@ -132,6 +146,8 @@ public class OpenCVHandler implements CameraBridgeViewBase.CvCameraViewListener2
         // Stop recording
         if (recorder.isRecording())
             recorder.stopRecording();
+
+        System.gc();
     }
 
     @Override
@@ -169,28 +185,31 @@ public class OpenCVHandler implements CameraBridgeViewBase.CvCameraViewListener2
             }
 
             // Convert to grayscale
-            Imgproc.cvtColor(inputRGBA, matGray, Imgproc.COLOR_RGBA2GRAY);
+            Imgproc.cvtColor(inputRGBA, inputGray, Imgproc.COLOR_RGBA2GRAY);
 
             // Fill reference frame on first run
             if (warmupTimeLeft < warmupTimeout / 2
-                    || matGray.cols() != matRefFloat.cols()
-                    || matGray.rows() != matRefFloat.rows()) {
-                matGray.convertTo(matRefFloat, CvType.CV_32FC1);
+                    || inputGray.cols() != matRefFloat.cols()
+                    || inputGray.rows() != matRefFloat.rows()) {
+                inputGray.convertTo(matRefFloat, CvType.CV_32FC1);
             }
 
             // Find difference in frames
             matRefFloat.convertTo(matRef, CvType.CV_8UC1);
-            Core.absdiff(matGray, matRef, matDiff);
+            Core.absdiff(inputGray, matRef, matDiff);
 
             // Accumulate reference frame
-            Imgproc.accumulateWeighted(matGray, matRefFloat, SettingsContainer.speedThreshold);
+            Imgproc.accumulateWeighted(inputGray, matRefFloat, speedThreshold);
 
             // Threshold difference
-            Imgproc.threshold(matDiff, matDiff, 20, 255, 0);
+            Imgproc.threshold(matDiff, matDiff,
+                    50 - SettingsContainer.sensitivity, 255, 0);
 
             // Increment number of frames with motion
-            if (Core.countNonZero(matDiff) > matDiff.cols() * matDiff.rows()
-                    * SettingsContainer.sizeThreshold) {
+            int nonZeroPixels = Core.countNonZero(matDiff);
+            if (nonZeroPixels > matDiff.cols() * matDiff.rows()
+                    * SettingsContainer.sizeThreshold
+                    && nonZeroPixels < (matDiff.cols() * matDiff.rows()) / 2) {
                 if (warmupTimeLeft > warmupTimeout && motionFrames <= detectMotionFrames)
                     motionFrames++;
             }
@@ -241,20 +260,19 @@ public class OpenCVHandler implements CameraBridgeViewBase.CvCameraViewListener2
             if (recorder.isRecording())
                 recorder.recordRGBAMat(inputRGBA);
 
-            // Clone object to output frame
-            inputRGBA.copyTo(outputRGBA);
-
-            // Create movement mask
+            // Combine channels
             channels.clear();
             channels.add(Mat.zeros(matDiff.rows(), matDiff.cols(), matDiff.type()));
             channels.add(matDiff);
             channels.add(Mat.zeros(matDiff.rows(), matDiff.cols(), matDiff.type()));
-            Core.divide(matDiff, new Scalar(2), matDiff);
             channels.add(matDiff);
             Core.merge(channels, matDiff);
 
-            // Add mask to the output image
-            Core.add(outputRGBA, matDiff, outputRGBA);
+            // Convert to RGBA
+            Imgproc.cvtColor(matDiff, matDiffRGBA, Imgproc.COLOR_RGB2RGBA);
+
+            // Combine output image
+            Core.add(inputRGBA, matDiffRGBA, outputRGBA);
 
             // Add recording text
             if (recorder.isRecording()) {
@@ -272,6 +290,17 @@ public class OpenCVHandler implements CameraBridgeViewBase.CvCameraViewListener2
                         textBackgroundColor, 2);
                 Imgproc.putText(outputRGBA, "Warming up: " + warmupSeconds + "s",
                         new Point(10, 50), Core.FONT_HERSHEY_PLAIN, 1,
+                        textForegroundColor, 1);
+            }
+
+            // Add server IP and port text
+            if (WebServer.serverHost.length() > 0 && WebServer.isServerListening()) {
+                String serverIpPort = WebServer.serverHost + ":" + WebServer.serverPort;
+                Imgproc.putText(outputRGBA, serverIpPort,
+                        new Point(10, 90), Core.FONT_HERSHEY_SIMPLEX, 1,
+                        textBackgroundColor, 2);
+                Imgproc.putText(outputRGBA, serverIpPort,
+                        new Point(10, 90), Core.FONT_HERSHEY_SIMPLEX, 1,
                         textForegroundColor, 1);
             }
 

@@ -9,7 +9,6 @@
     <string name="video_format">Video format:</string>
     <string name="enable_flashlight_on_motion">Enable flashlight on motion</string>
     <string name="motion_detection_settings">Motion detection settings</string>
-    <string name="speed_threshold">Speed threshold:</string>
     <string name="size_threshold">Size threshold:</string>
     <string name="save">Save</string>
     <string name="settings_saved">Settings saved</string>
@@ -21,6 +20,9 @@
     <string name="error_finishing_record">Error finishing record!</string>
     <string name="error_starting_record">Error starting record!</string>
     <string name="error_saving_settings">Error saving settings!</string>
+    <string name="web_server_settings">Web server settings</string>
+    <string name="server_port">Server port:</string>
+    <string name="sensitivity">Sensitivity:</string>
     <string-array name="camera_options">
         <item>Any</item>
         <item>Back</item>

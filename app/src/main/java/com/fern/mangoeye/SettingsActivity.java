@@ -24,10 +24,13 @@ package com.fern.mangoeye;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.Toast;
@@ -53,13 +56,16 @@ public class SettingsActivity extends AppCompatActivity {
     private int cameraID;
     private boolean enableFlashlight;
     private String videoFormat;
-    private double speedThreshold, sizeThreshold;
+    private int sensitivity;
+    private double sizeThreshold;
+    private int serverPort;
 
     // Elements
     private Spinner spinnerStorages, cameraIDSpinner, formatSpinner;
     @SuppressLint("UseSwitchCompatOrMaterialCode")
     private Switch switchFlashlight;
-    private Slider speedThresholdSlider, sizeThresholdSlider;
+    private Slider sensitivitySlider, sizeThresholdSlider;
+    private EditText serverPortText;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,8 +92,9 @@ public class SettingsActivity extends AppCompatActivity {
         cameraIDSpinner = findViewById(R.id.cameraIDSpinner);
         switchFlashlight = findViewById(R.id.switchFlashlight);
         formatSpinner = findViewById(R.id.formatSpinner);
-        speedThresholdSlider = findViewById(R.id.speedThresholdSlider);
+        sensitivitySlider = findViewById(R.id.sensitivitySlider);
         sizeThresholdSlider = findViewById(R.id.sizeThresholdSlider);
+        serverPortText = findViewById(R.id.serverPortText);
 
         // Connect Restore button
         findViewById(R.id.settingsResetBtn).setOnClickListener(view -> {
@@ -96,8 +103,9 @@ public class SettingsActivity extends AppCompatActivity {
             cameraID = CameraBridgeViewBase.CAMERA_ID_ANY;
             enableFlashlight = true;
             videoFormat = "mp4";
-            speedThreshold = 0.3;
+            sensitivity = 25;
             sizeThreshold = 0.1;
+            serverPort = 5000;
 
             // Update view
             updateView();
@@ -157,16 +165,16 @@ public class SettingsActivity extends AppCompatActivity {
             public void onNothingSelected(AdapterView<?> adapterView) { }
         });
 
-        // Connect speed threshold slider
-        speedThresholdSlider.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
+        // Connect sensitivity slider
+        sensitivitySlider.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
             @Override
             public void onStartTrackingTouch(@NonNull Slider slider) {
-                speedThreshold = slider.getValue();
+                sensitivity = (int) slider.getValue();
             }
 
             @Override
             public void onStopTrackingTouch(@NonNull Slider slider) {
-                speedThreshold = slider.getValue();
+                sensitivity = (int) slider.getValue();
             }
         });
 
@@ -183,13 +191,35 @@ public class SettingsActivity extends AppCompatActivity {
             }
         });
 
+        // Connect server port editTest
+        serverPortText.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+                try {
+                    serverPort = Integer.parseInt(charSequence.toString());
+                } catch (Exception ignored) { }
+            }
+
+            @Override
+            public void afterTextChanged(Editable editable) {
+                try {
+                    serverPort = Integer.parseInt(editable.toString());
+                } catch (Exception ignored) { }
+            }
+        });
+
         // Copy settings to local variables
         this.externalFilesDir = SettingsContainer.externalFilesDir;
         this.cameraID = SettingsContainer.cameraID;
         this.enableFlashlight = SettingsContainer.enableFlashlight;
         this.videoFormat = SettingsContainer.videoFormat;
-        this.speedThreshold = SettingsContainer.speedThreshold;
+        this.sensitivity = SettingsContainer.sensitivity;
         this.sizeThreshold = SettingsContainer.sizeThreshold;
+        this.serverPort = SettingsContainer.serverPort;
 
         // Load view
         updateView();
@@ -234,11 +264,14 @@ public class SettingsActivity extends AppCompatActivity {
         if (videoFormats.contains(videoFormat))
             formatSpinner.setSelection(videoFormats.indexOf(videoFormat));
 
-        // Speed threshold
-        speedThresholdSlider.setValue((float) speedThreshold);
+        // Sensitivity
+        sensitivitySlider.setValue((float) sensitivity);
 
         // Size threshold
         sizeThresholdSlider.setValue((float) sizeThreshold);
+
+        // Server port
+        serverPortText.setText(String.valueOf(serverPort));
     }
 
     /**
@@ -252,13 +285,24 @@ public class SettingsActivity extends AppCompatActivity {
             SettingsContainer.cameraID = this.cameraID;
             SettingsContainer.enableFlashlight = this.enableFlashlight;
             SettingsContainer.videoFormat = this.videoFormat;
-            SettingsContainer.speedThreshold = this.speedThreshold;
+            SettingsContainer.sensitivity = this.sensitivity;
             SettingsContainer.sizeThreshold = this.sizeThreshold;
+            SettingsContainer.serverPort = this.serverPort;
 
             // Save settings to file
             SettingsHandler.saveSettings(MainActivity.settingsFile, this);
             Toast.makeText(this, R.string.settings_saved,
                     Toast.LENGTH_SHORT).show();
+
+            // Update web server if port changed
+            if (WebServer.isServerListening()
+                    && WebServer.serverPort != SettingsContainer.serverPort) {
+                try {
+                    WebServer.setServerPort(SettingsContainer.serverPort);
+                    WebServer.stopServer();
+                    WebServer.startServer(this);
+                } catch (Exception ignored) { }
+            }
         } catch (Exception e) {
             Toast.makeText(this, R.string.error_wrong_settings,
                     Toast.LENGTH_LONG).show();

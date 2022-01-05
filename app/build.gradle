@@ -21,6 +21,7 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
         }
     }
     compileOptions {
@@ -59,4 +60,6 @@ dependencies {
     implementation group: 'org.bytedeco', name: 'ffmpeg', version: '4.3.2-1.5.5', classifier: 'android-x86'
 
     implementation 'com.android.support:multidex:1.0.3'
+
+    implementation 'com.koushikdutta.async:androidasync:2.2.1'
 }

@@ -82,8 +82,9 @@ public class SettingsHandler {
             SettingsContainer.cameraID = jsonObject.getInt("camera_id");
             SettingsContainer.enableFlashlight = jsonObject.getBoolean("enable_flashlight");
             SettingsContainer.videoFormat = jsonObject.getString("video_format");
-            SettingsContainer.speedThreshold = jsonObject.getDouble("speed_threshold");
+            SettingsContainer.sensitivity = jsonObject.getInt("sensitivity");
             SettingsContainer.sizeThreshold = jsonObject.getDouble("size_threshold");
+            SettingsContainer.serverPort = jsonObject.getInt("server_port");
 
             // Check externalFilesDir
             boolean storageAccepted = false;
@@ -140,8 +141,9 @@ public class SettingsHandler {
             jsonObject.put("camera_id", SettingsContainer.cameraID);
             jsonObject.put("enable_flashlight", SettingsContainer.enableFlashlight);
             jsonObject.put("video_format", SettingsContainer.videoFormat);
-            jsonObject.put("speed_threshold", SettingsContainer.speedThreshold);
+            jsonObject.put("sensitivity", SettingsContainer.sensitivity);
             jsonObject.put("size_threshold", SettingsContainer.sizeThreshold);
+            jsonObject.put("server_port", SettingsContainer.serverPort);
 
             // Write JSONObject to file
             FileWriter fileWriter = new FileWriter(settingsFile);

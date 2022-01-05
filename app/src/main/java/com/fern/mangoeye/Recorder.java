@@ -46,6 +46,8 @@ import java.util.Locale;
 public class Recorder {
     private final String TAG = this.getClass().getName();
 
+    public static String recordingFileName = "";
+
     private final Activity activity;
     private FFmpegFrameRecorder fFmpegFrameRecorder;
     private AudioRecordRunnable audioRecordRunnable;
@@ -63,17 +65,22 @@ public class Recorder {
      * Starts recording video and audio
      */
     public void startRecording(int frameWidth, int frameHeight, int frameRate) {
-        try {
-            Log.i(TAG, "Starting new recording");
-            initRecorder(frameWidth, frameHeight, frameRate);
-            fFmpegFrameRecorder.start();
-            startTime = System.currentTimeMillis();
-            recording = true;
-            activity.runOnUiThread(() -> audioThread.start());
-        } catch (Exception e) {
-            Log.e(TAG, "Error starting record!", e);
-            activity.runOnUiThread(() -> Toast.makeText(activity, R.string.error_starting_record,
-                    Toast.LENGTH_SHORT).show());
+        if (activity != null && !activity.isDestroyed() && !activity.isFinishing()) {
+            try {
+                Log.i(TAG, "Starting new recording");
+                initRecorder(frameWidth, frameHeight, frameRate);
+                fFmpegFrameRecorder.start();
+                startTime = System.currentTimeMillis();
+                if (audioThread != null) {
+                    activity.runOnUiThread(() -> audioThread.start());
+                    recording = true;
+                } else
+                    stopRecording();
+            } catch (Exception e) {
+                Log.e(TAG, "Error starting record!", e);
+                activity.runOnUiThread(() -> Toast.makeText(activity, R.string.error_starting_record,
+                        Toast.LENGTH_SHORT).show());
+            }
         }
     }
 
@@ -86,7 +93,7 @@ public class Recorder {
             audioRecordRunnable.stop();
             try {
                 audioThread.join();
-            } catch (InterruptedException e) {
+            } catch (Exception e) {
                 Log.e(TAG, "Error finishing audio thread!", e);
             }
         }
@@ -113,6 +120,7 @@ public class Recorder {
         }
         Log.i(TAG, "Recording finished");
         recording = false;
+        recordingFileName = "";
     }
 
     public void recordRGBAMat(Mat mat) {
@@ -163,6 +171,8 @@ public class Recorder {
             return;
 
         Log.i(TAG, "Writing to file: " + file.getAbsolutePath());
+
+        recordingFileName = file.getName();
 
         fFmpegFrameRecorder =
                 new FFmpegFrameRecorder(file, frameWidth, frameHeight, 1);
