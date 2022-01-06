@@ -50,47 +50,61 @@ function updateView() {
                 }
             } catch (ignored) { }
 
-            // Create new elements
-            let scrollElement;
-            let thumbnailDiv;
-            let dateDiv;
-            let deleteDiv;
-            let br;
-            for (let i = 0; i < records.length; i++) {
-                // Create new scrollElement
-                scrollElement = document.createElement("div");
+            // If there are videos
+            if (records.length > 0) {
+                // Create new elements
+                let scrollElement;
+                let thumbnailDiv;
+                let dateDiv;
+                let deleteDiv;
+                let br;
+                for (let i = 0; i < records.length; i++) {
+                    // Create new scrollElement
+                    scrollElement = document.createElement("div");
+                    scrollElement.className = "scroll-element";
+                    scrollElement.setAttribute("onclick", "selectElement(this);");
+
+                    // Create new thumbnailDiv
+                    thumbnailDiv = document.createElement("div");
+                    thumbnailDiv.innerHTML = "<img src=\"data:image/jpeg;base64,"
+                    + records[i].thumbnail.replace("\\/", "/") + "\">";
+                    thumbnailDiv.onclick = function() {
+                        viewVideo(records[i].filename, records[i].date, records[i].type);
+                    };
+
+                    // Create new dateDiv
+                    dateDiv = document.createElement("div");
+                    dateDiv.innerHTML = "<p>" + records[i].date + "</p>";
+
+                    // Create new deleteDiv
+                    deleteDiv = document.createElement("div");
+                    deleteDiv.innerHTML = "<img src=\"delete.png\" class=\"icon-delete\">";
+                    deleteDiv.onclick = function() {
+                        deleteVideo(records[i].filename);
+                    };
+
+                    // Create BR element
+                    br = document.createElement("br");
+                    br.className = "scroll-element";
+
+                    // Append all elements
+                    scrollElement.appendChild(thumbnailDiv);
+                    scrollElement.appendChild(dateDiv);
+                    scrollElement.appendChild(deleteDiv);
+                    scrollContainer.appendChild(scrollElement);
+                    scrollContainer.appendChild(br);
+                }
+            }
+
+            // No videos
+            else {
+                // Add empty text
+                let scrollElement = document.createElement("div");
                 scrollElement.className = "scroll-element";
-                scrollElement.setAttribute("onclick", "selectElement(this);");
+                scrollElement.innerHTML = "<p style=\"margin: 1em;\">No videos</p>";
 
-                // Create new thumbnailDiv
-                thumbnailDiv = document.createElement("div");
-                thumbnailDiv.innerHTML = "<img src=\"data:image/jpeg;base64,"
-                + records[i].thumbnail.replace("\\/", "/") + "\">";
-                thumbnailDiv.onclick = function() {
-                    viewVideo(records[i].filename, records[i].date, records[i].type);
-                };
-
-                // Create new dateDiv
-                dateDiv = document.createElement("div");
-                dateDiv.innerHTML = "<p>" + records[i].date + "</p>";
-
-                // Create new deleteDiv
-                deleteDiv = document.createElement("div");
-                deleteDiv.innerHTML = "<img src=\"delete.png\" class=\"icon-delete\">";
-                deleteDiv.onclick = function() {
-                    deleteVideo(records[i].filename);
-                };
-
-                // Create BR element
-                br = document.createElement("br");
-                br.className = "scroll-element";
-
-                // Append all elements
-                scrollElement.appendChild(thumbnailDiv);
-                scrollElement.appendChild(dateDiv);
-                scrollElement.appendChild(deleteDiv);
+                // Append element
                 scrollContainer.appendChild(scrollElement);
-                scrollContainer.appendChild(br);
             }
 
             // Hide overlay
